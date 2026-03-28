@@ -1,19 +1,21 @@
 import FrameList from './FrameList.jsx'
 import FramePanel from './FramePanel.jsx'
 import GridConfigPanel from './GridConfigPanel.jsx'
+import SnapPointPanel from './SnapPointPanel.jsx'
 import ChromaKeyPanel from './ChromaKeyPanel.jsx'
 
 function Sidebar({
   sidebarTab, setSidebarTab,
-  frames, selectedFrameId, referenceFrameId,
+  frames, selectedFrameId,
   onSelectFrame, onUpdateLabel,
   selectedFrame,
-  onSetAsReference, onClearReference,
   onDownloadFrame, onSwapUpload, onRemoveSwap,
   onUpdateFrameChromaKey, onStartEyedropper, eyedropperTarget,
   gridConfig, imageInfo, onApplyGrid,
   bgChromaKey, onUpdateBgChromaKey,
   gridWarning, hasImage, sheetSource,
+  snapPoint, onClearSnapPoint,
+  onClearFrameSnapPoint,
 }) {
   return (
     <div className="annotation-sidebar">
@@ -38,7 +40,6 @@ function Sidebar({
             <FrameList
               frames={frames}
               selectedFrameId={selectedFrameId}
-              referenceFrameId={referenceFrameId}
               onSelectFrame={onSelectFrame}
               onUpdateLabel={onUpdateLabel}
               sheetSource={sheetSource}
@@ -46,15 +47,13 @@ function Sidebar({
             {selectedFrame && (
               <FramePanel
                 frame={selectedFrame}
-                referenceFrameId={referenceFrameId}
-                onSetAsReference={onSetAsReference}
-                onClearReference={onClearReference}
                 onDownloadFrame={onDownloadFrame}
                 onSwapUpload={onSwapUpload}
                 onRemoveSwap={onRemoveSwap}
                 onUpdateFrameChromaKey={onUpdateFrameChromaKey}
                 onStartEyedropper={onStartEyedropper}
                 eyedropperTarget={eyedropperTarget}
+                onClearFrameSnapPoint={onClearFrameSnapPoint}
               />
             )}
           </>
@@ -66,6 +65,10 @@ function Sidebar({
               onApplyGrid={onApplyGrid}
               hasImage={hasImage}
               gridWarning={gridWarning}
+            />
+            <SnapPointPanel
+              snapPoint={snapPoint}
+              onClearSnapPoint={onClearSnapPoint}
             />
             <ChromaKeyPanel
               chromaKey={bgChromaKey}

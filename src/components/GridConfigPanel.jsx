@@ -1,8 +1,16 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 function GridConfigPanel({ gridConfig, imageInfo, onApplyGrid, hasImage, gridWarning }) {
   const [rows, setRows] = useState(gridConfig?.rows || 4)
   const [cols, setCols] = useState(gridConfig?.cols || 4)
+
+  // Sync local state when gridConfig changes externally (e.g. project load)
+  useEffect(() => {
+    if (gridConfig) {
+      setRows(gridConfig.rows)
+      setCols(gridConfig.cols)
+    }
+  }, [gridConfig])
 
   const handleApply = useCallback(() => {
     const r = Math.max(1, Math.min(64, rows))

@@ -1,10 +1,18 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { generateThumbnail } from '../utils/frameExtract.js'
 
-function FrameList({ frames, selectedFrameId, referenceFrameId, onSelectFrame, onUpdateLabel, sheetSource }) {
+function FrameList({ frames, selectedFrameId, onSelectFrame, onUpdateLabel, sheetSource }) {
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
   const editRef = useRef(null)
+  const selectedItemRef = useRef(null)
+
+  // Scroll selected frame into view when it changes
+  useEffect(() => {
+    if (selectedItemRef.current) {
+      selectedItemRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [selectedFrameId])
 
   // Generate thumbnails
   const thumbnails = useMemo(() => {
@@ -53,13 +61,14 @@ function FrameList({ frames, selectedFrameId, referenceFrameId, onSelectFrame, o
     <div className="frame-list">
       {frames.map((frame) => {
         const isSelected = frame.id === selectedFrameId
-        const isRef = frame.id === referenceFrameId
-        const hasAnchor = frame.anchorX !== null && frame.anchorY !== null
+        const hasRefPoint = frame.refPointX !== null && frame.refPointY !== null
         const hasSwap = !!frame.swapImage
+        const isDelinked = frame.snapPointX != null
 
         return (
           <div
             key={frame.id}
+            ref={isSelected ? selectedItemRef : null}
             className={`frame-item ${isSelected ? 'selected' : ''}`}
             onClick={() => onSelectFrame(frame.id)}
           >
@@ -86,10 +95,10 @@ function FrameList({ frames, selectedFrameId, referenceFrameId, onSelectFrame, o
                 </div>
               )}
               <div className="frame-status-row">
-                {hasAnchor && <span className="frame-status-dot anchored" title="Anchor set" />}
-                {isRef && <span className="frame-status-dot reference" title="Reference frame" />}
+                {hasRefPoint && <span className="frame-status-dot anchored" title="Ref point set" />}
                 {hasSwap && <span className="frame-status-dot swapped" title="Frame swapped" />}
-                {!hasAnchor && <span className="frame-status-dot empty" title="No anchor" />}
+                {isDelinked && <span className="frame-status-dot delinked" title="Snap point overridden" />}
+                {!hasRefPoint && <span className="frame-status-dot empty" title="No ref point" />}
               </div>
             </div>
           </div>

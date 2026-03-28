@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { computeAlignmentOffsets } from '../utils/alignment.js'
 import { getFrameCanvas } from '../utils/frameExtract.js'
+import { drawCheckerboard } from '../utils/canvasUtils.js'
 
-function AlignmentPreview({ frames, gridConfig, referenceFrameId, sheetSource, processedBgCanvas, onClose }) {
+function AlignmentPreview({ frames, gridConfig, snapPoint, sheetSource, onClose }) {
   const canvasRef = useRef(null)
   const [playing, setPlaying] = useState(true)
   const [fps, setFps] = useState(8)
@@ -12,13 +13,13 @@ function AlignmentPreview({ frames, gridConfig, referenceFrameId, sheetSource, p
   const lastTimeRef = useRef(0)
 
   const anchoredFrames = useMemo(() => {
-    const withAnchors = frames.filter(f => f.anchorX !== null && f.anchorY !== null)
-    return withAnchors.length > 0 ? withAnchors : frames
+    const withRefPoints = frames.filter(f => f.refPointX !== null && f.refPointY !== null)
+    return withRefPoints.length > 0 ? withRefPoints : frames
   }, [frames])
 
   const { offsets, targetX, targetY } = useMemo(() => {
-    return computeAlignmentOffsets(frames, referenceFrameId)
-  }, [frames, referenceFrameId])
+    return computeAlignmentOffsets(frames, snapPoint)
+  }, [frames, snapPoint])
 
   // Animation loop
   useEffect(() => {
@@ -57,18 +58,12 @@ function AlignmentPreview({ frames, gridConfig, referenceFrameId, sheetSource, p
     ctx.clearRect(0, 0, dw, dh)
 
     // Checkerboard
-    const sz = 8
-    for (let y = 0; y < dh; y += sz) {
-      for (let x = 0; x < dw; x += sz) {
-        ctx.fillStyle = ((x / sz + y / sz) % 2 === 0) ? '#3a3a4a' : '#2a2a3a'
-        ctx.fillRect(x, y, sz, sz)
-      }
-    }
+    drawCheckerboard(ctx, dw, dh)
 
     ctx.save()
     ctx.scale(displayScale, displayScale)
 
-    const source = processedBgCanvas || sheetSource
+    const source = sheetSource
 
     // Onion skin: draw previous frame at reduced opacity
     if (onionSkin && anchoredFrames.length > 1) {
@@ -87,26 +82,33 @@ function AlignmentPreview({ frames, gridConfig, referenceFrameId, sheetSource, p
     const frameCanvas = getFrameCanvas(frame, source)
     ctx.drawImage(frameCanvas, Math.round(offset.dx), Math.round(offset.dy))
 
-    // Anchor marker
-    ctx.strokeStyle = 'rgba(255, 107, 107, 0.6)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.arc(targetX, targetY, 3, 0, Math.PI * 2)
-    ctx.stroke()
+    // Snap point marker
+    if (snapPoint) {
+      ctx.strokeStyle = 'rgba(230, 168, 23, 0.6)'
+      ctx.lineWidth = 1
+      const s = 4
+      ctx.beginPath()
+      ctx.moveTo(targetX, targetY - s)
+      ctx.lineTo(targetX + s, targetY)
+      ctx.lineTo(targetX, targetY + s)
+      ctx.lineTo(targetX - s, targetY)
+      ctx.closePath()
+      ctx.stroke()
+    }
 
     ctx.restore()
-  }, [currentFrame, anchoredFrames, offsets, targetX, targetY, gridConfig, sheetSource, processedBgCanvas, onionSkin])
+  }, [currentFrame, anchoredFrames, offsets, targetX, targetY, gridConfig, sheetSource, onionSkin, snapPoint])
 
   if (frames.length === 0) {
     return (
-      <div className="swap-crop-overlay" onClick={onClose}>
-        <div className="swap-crop-modal" onClick={e => e.stopPropagation()}>
-          <div className="swap-crop-header">
+      <div className="preview-overlay" onClick={onClose}>
+        <div className="preview-container" onClick={e => e.stopPropagation()}>
+          <div className="preview-header">
             <span>Animation Preview</span>
-            <button className="swap-crop-close" onClick={onClose}>&#10005;</button>
+            <button className="preview-close" onClick={onClose}>&#10005;</button>
           </div>
           <div className="preview-empty">No frames to preview. Set up a grid first.</div>
-          <div className="swap-crop-actions">
+          <div className="preview-actions">
             <button onClick={onClose}>Close</button>
           </div>
         </div>
@@ -115,11 +117,11 @@ function AlignmentPreview({ frames, gridConfig, referenceFrameId, sheetSource, p
   }
 
   return (
-    <div className="swap-crop-overlay" onClick={onClose}>
-      <div className="swap-crop-modal preview-modal" onClick={e => e.stopPropagation()}>
-        <div className="swap-crop-header">
+    <div className="preview-overlay" onClick={onClose}>
+      <div className="preview-container preview-modal" onClick={e => e.stopPropagation()}>
+        <div className="preview-header">
           <span>Animation Preview — {anchoredFrames[currentFrame % anchoredFrames.length]?.label}</span>
-          <button className="swap-crop-close" onClick={onClose}>&#10005;</button>
+          <button className="preview-close" onClick={onClose}>&#10005;</button>
         </div>
         <div className="preview-canvas-wrap">
           <canvas ref={canvasRef} />
@@ -150,7 +152,7 @@ function AlignmentPreview({ frames, gridConfig, referenceFrameId, sheetSource, p
             {(currentFrame % anchoredFrames.length) + 1} / {anchoredFrames.length}
           </span>
         </div>
-        <div className="swap-crop-actions">
+        <div className="preview-actions">
           <button onClick={onClose}>Close</button>
         </div>
       </div>

@@ -5,14 +5,15 @@ import { getFrameCanvas } from './frameExtract.js'
  * Export an aligned sprite sheet as a PNG.
  *
  * @param {object[]} frames - Array of frame objects
- * @param {string|null} referenceFrameId
+ * @param {{ x: number, y: number } | null} snapPoint - Shared snap point
  * @param {object} gridConfig - { rows, cols, cellWidth, cellHeight }
  * @param {HTMLImageElement|HTMLCanvasElement} sheetSource - Original or processed sheet
  * @returns {HTMLCanvasElement} The exported sheet canvas
  */
-export function exportAlignedSheet(frames, referenceFrameId, gridConfig, sheetSource) {
+// If snapPoint is null, all offsets are zero and output equals the original layout.
+export function exportAlignedSheet(frames, snapPoint, gridConfig, sheetSource) {
   const { rows, cols, cellWidth, cellHeight } = gridConfig
-  const { offsets } = computeAlignmentOffsets(frames, referenceFrameId)
+  const { offsets } = computeAlignmentOffsets(frames, snapPoint)
   const { padLeft, padTop, outputCellW, outputCellH } = computeExportPadding(offsets, cellWidth, cellHeight)
 
   const outCanvas = document.createElement('canvas')

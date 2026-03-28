@@ -1,43 +1,46 @@
 function FramePanel({
   frame,
-  referenceFrameId,
-  onSetAsReference, onClearReference,
   onDownloadFrame, onSwapUpload, onRemoveSwap,
   onUpdateFrameChromaKey, onStartEyedropper, eyedropperTarget,
+  onClearFrameSnapPoint,
 }) {
   if (!frame) return null
 
-  const isRef = frame.id === referenceFrameId
-  const hasAnchor = frame.anchorX !== null && frame.anchorY !== null
+  const hasRefPoint = frame.refPointX !== null && frame.refPointY !== null
   const hasSwap = !!frame.swapImage
+  const hasSnapOverride = frame.snapPointX != null
 
   return (
     <div className="region-panel">
       <div className="region-panel-header">{frame.label}</div>
 
-      {/* Anchor info */}
+      {/* Snap Point Override info */}
       <div className="region-panel-section">
-        <div className="region-panel-section-title">Anchor</div>
-        {hasAnchor ? (
-          <div className="frame-anchor-info">
-            <span className="frame-anchor-coords">x: {frame.anchorX}, y: {frame.anchorY}</span>
+        <div className="region-panel-section-title">Snap Point</div>
+        {hasSnapOverride ? (
+          <div className="frame-refpoint-info">
+            <span className="frame-snap-delinked-badge">Overridden</span>
+            <span className="frame-refpoint-coords warning">
+              x: {frame.snapPointX}, y: {frame.snapPointY}
+            </span>
+            <button className="region-panel-btn relink-btn" onClick={() => onClearFrameSnapPoint(frame.id)}>
+              Re-link to Global
+            </button>
           </div>
         ) : (
-          <div className="frame-anchor-none">No anchor set. Use the Anchor tool to place one.</div>
+          <div className="frame-refpoint-none">Linked to global snap point.</div>
         )}
       </div>
 
-      {/* Reference */}
+      {/* Reference Point info */}
       <div className="region-panel-section">
-        <div className="region-panel-section-title">Reference</div>
-        {isRef ? (
-          <button className="region-panel-btn" onClick={onClearReference}>
-            Clear Reference
-          </button>
+        <div className="region-panel-section-title">Reference Point</div>
+        {hasRefPoint ? (
+          <div className="frame-refpoint-info">
+            <span className="frame-refpoint-coords">x: {frame.refPointX}, y: {frame.refPointY}</span>
+          </div>
         ) : (
-          <button className="region-panel-btn" onClick={() => onSetAsReference(frame.id)} disabled={!hasAnchor}>
-            Set as Reference
-          </button>
+          <div className="frame-refpoint-none">No reference point set. Use the Ref Point tool to mark a feature.</div>
         )}
       </div>
 

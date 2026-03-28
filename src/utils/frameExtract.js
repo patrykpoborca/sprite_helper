@@ -23,7 +23,7 @@ export function extractFrameCanvas(source, frame) {
  * @returns {string} data URL
  */
 export function generateThumbnail(source, frame, maxSize = 48) {
-  const canvas = extractFrameCanvas(source, frame)
+  const canvas = getFrameCanvas(frame, source)
   const scale = Math.min(maxSize / canvas.width, maxSize / canvas.height, 1)
   const thumbCanvas = document.createElement('canvas')
   thumbCanvas.width = Math.round(canvas.width * scale)

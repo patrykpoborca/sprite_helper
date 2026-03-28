@@ -1,17 +1,8 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { getFrameCanvas } from '../utils/frameExtract.js'
+import { drawCheckerboard } from '../utils/canvasUtils.js'
 
-function drawCheckerboard(ctx, w, h, size = 8) {
-  for (let y = 0; y < h; y += size) {
-    for (let x = 0; x < w; x += size) {
-      const isLight = ((x / size) + (y / size)) % 2 === 0
-      ctx.fillStyle = isLight ? '#3a3a4a' : '#2a2a3a'
-      ctx.fillRect(x, y, size, size)
-    }
-  }
-}
-
-function drawAnchorCrosshair(ctx, x, y, scale, color, size) {
+function drawRefPointCrosshair(ctx, x, y, scale, color, size) {
   const s = size / scale
   ctx.strokeStyle = color
   ctx.lineWidth = 2 / scale
@@ -31,10 +22,70 @@ function drawAnchorCrosshair(ctx, x, y, scale, color, size) {
   ctx.fill()
 }
 
+function drawSnapPointMarker(ctx, x, y, scale, alpha = 1) {
+  const s = 6 / scale
+  ctx.save()
+  ctx.globalAlpha = alpha
+  ctx.strokeStyle = '#e6a817'
+  ctx.fillStyle = '#e6a817'
+  ctx.lineWidth = 2 / scale
+
+  // Diamond shape
+  ctx.beginPath()
+  ctx.moveTo(x, y - s)
+  ctx.lineTo(x + s, y)
+  ctx.lineTo(x, y + s)
+  ctx.lineTo(x - s, y)
+  ctx.closePath()
+  ctx.stroke()
+
+  // Center dot
+  ctx.beginPath()
+  ctx.arc(x, y, 2 / scale, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.restore()
+}
+
+function drawDelinkedSnapPointMarker(ctx, x, y, scale, alpha = 1) {
+  const s = 6 / scale
+  ctx.save()
+  ctx.globalAlpha = alpha
+  ctx.strokeStyle = '#ff8c00'
+  ctx.fillStyle = '#ff8c00'
+  ctx.lineWidth = 2 / scale
+
+  // Diamond shape
+  ctx.beginPath()
+  ctx.moveTo(x, y - s)
+  ctx.lineTo(x + s, y)
+  ctx.lineTo(x, y + s)
+  ctx.lineTo(x - s, y)
+  ctx.closePath()
+  ctx.stroke()
+
+  // Horizontal bars through center
+  const barLen = s * 0.6
+  ctx.beginPath()
+  ctx.moveTo(x - barLen, y)
+  ctx.lineTo(x + barLen, y)
+  ctx.stroke()
+
+  // Center dot
+  ctx.beginPath()
+  ctx.arc(x, y, 2 / scale, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.restore()
+}
+
 function Canvas({
-  image, imgRef, imageInfo, gridConfig, frames, selectedFrameId, referenceFrameId,
+  image, imageElement, imageInfo, gridConfig, frames, selectedFrameId, snapPoint,
   activeTool, viewMode, processedBgCanvas, alignmentData,
-  onSelectFrame, onSetAnchor, onRemoveAnchor, onColorSampled, setViewMode,
+  onSelectFrame, onSetSnapPoint, onClearSnapPoint, onSetRefPoint, onRemoveRefPoint,
+  onSetFrameSnapPoint, onClearFrameSnapPoint,
+  onColorSampled, setViewMode,
+  onPrevFrame, onNextFrame,
 }) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
@@ -116,7 +167,42 @@ function Canvas({
   const sampleColorAt = useCallback((clientX, clientY) => {
     const pos = canvasToImage(clientX, clientY)
     if (!pos) return null
-    const source = processedBgCanvas || imgRef?.current
+
+    // In frame view, pos is cell-local. We need to sample from the right source.
+    if (viewMode === 'frame' && selectedFrameId) {
+      const sf = frames.find(f => f.id === selectedFrameId)
+      if (!sf) return null
+      // Use swap image/processed canvas if available, otherwise offset into sheet
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = 1
+      tempCanvas.height = 1
+      const ctx = tempCanvas.getContext('2d')
+      if (sf.processedCanvas) {
+        const pw = sf.processedCanvas.width
+        const ph = sf.processedCanvas.height
+        if (pos.ix < 0 || pos.iy < 0 || pos.ix >= pw || pos.iy >= ph) return null
+        ctx.drawImage(sf.processedCanvas, pos.ix, pos.iy, 1, 1, 0, 0, 1, 1)
+      } else if (sf.swapImage) {
+        if (sf.swapCrop) {
+          const sx = sf.swapCrop.x + pos.ix * (sf.swapCrop.w / sf.srcW)
+          const sy = sf.swapCrop.y + pos.iy * (sf.swapCrop.h / sf.srcH)
+          ctx.drawImage(sf.swapImage, sx, sy, 1, 1, 0, 0, 1, 1)
+        } else {
+          const sx = pos.ix * ((sf.swapImage.naturalWidth || sf.swapImage.width) / sf.srcW)
+          const sy = pos.iy * ((sf.swapImage.naturalHeight || sf.swapImage.height) / sf.srcH)
+          ctx.drawImage(sf.swapImage, sx, sy, 1, 1, 0, 0, 1, 1)
+        }
+      } else {
+        const source = processedBgCanvas || imageElement
+        if (!source) return null
+        ctx.drawImage(source, sf.srcX + pos.ix, sf.srcY + pos.iy, 1, 1, 0, 0, 1, 1)
+      }
+      const pixel = ctx.getImageData(0, 0, 1, 1).data
+      return '#' + [pixel[0], pixel[1], pixel[2]].map(c => c.toString(16).padStart(2, '0')).join('')
+    }
+
+    // Sheet / aligned view: pos is in sheet coords
+    const source = processedBgCanvas || imageElement
     if (!source) return null
     const tempCanvas = document.createElement('canvas')
     tempCanvas.width = 1
@@ -129,7 +215,7 @@ function Canvas({
     const pixel = ctx.getImageData(0, 0, 1, 1).data
     const hex = '#' + [pixel[0], pixel[1], pixel[2]].map(c => c.toString(16).padStart(2, '0')).join('')
     return hex
-  }, [canvasToImage, processedBgCanvas, imgRef])
+  }, [canvasToImage, processedBgCanvas, imageElement, viewMode, selectedFrameId, frames])
 
   // Find frame at image coordinates
   const frameAtCoord = useCallback((ix, iy) => {
@@ -158,7 +244,7 @@ function Canvas({
     // Clear
     ctx.clearRect(0, 0, canvasSize.width, canvasSize.height)
 
-    const currentImg = imgRef?.current
+    const currentImg = imageElement
     if (!imageInfo || !currentImg) return
     if (!fitParams) return
 
@@ -249,11 +335,30 @@ function Canvas({
         }
       }
 
-      // Anchor crosshairs
+      // Snap point markers in every cell (linked or de-linked)
+      if (gridConfig) {
+        for (const frame of frames) {
+          if (frame.snapPointX != null) {
+            // De-linked: per-frame override, orange diamond with bars
+            drawDelinkedSnapPointMarker(ctx,
+              frame.srcX + frame.snapPointX,
+              frame.srcY + frame.snapPointY,
+              scale)
+          } else if (snapPoint) {
+            // Linked: global snap point, gold diamond
+            drawSnapPointMarker(ctx,
+              frame.srcX + snapPoint.x,
+              frame.srcY + snapPoint.y,
+              scale)
+          }
+        }
+      }
+
+      // Per-frame refPoint crosshairs
       for (const frame of frames) {
-        if (frame.anchorX !== null && frame.anchorY !== null) {
-          drawAnchorCrosshair(ctx, frame.srcX + frame.anchorX, frame.srcY + frame.anchorY, scale,
-            frame.isReference ? '#ff6b6b' : '#20bf6b', 10)
+        if (frame.refPointX !== null && frame.refPointY !== null) {
+          drawRefPointCrosshair(ctx, frame.srcX + frame.refPointX, frame.srcY + frame.refPointY, scale,
+            '#20bf6b', 10)
         }
       }
 
@@ -278,22 +383,29 @@ function Canvas({
           ctx.drawImage(source, sf.srcX, sf.srcY, sf.srcW, sf.srcH, 0, 0, fw, fh)
         }
 
-        if (sf.anchorX !== null && sf.anchorY !== null) {
+        // Draw effective snap point (per-frame override or global)
+        if (sf.snapPointX != null) {
+          drawDelinkedSnapPointMarker(ctx, sf.snapPointX, sf.snapPointY, scale)
+        } else if (snapPoint) {
+          drawSnapPointMarker(ctx, snapPoint.x, snapPoint.y, scale, 0.4)
+        }
+
+        // Draw refPoint crosshair with guide lines
+        if (sf.refPointX !== null && sf.refPointY !== null) {
           ctx.strokeStyle = 'rgba(32, 191, 107, 0.3)'
           ctx.lineWidth = 1 / scale
           ctx.setLineDash([4 / scale, 4 / scale])
           ctx.beginPath()
-          ctx.moveTo(sf.anchorX, 0)
-          ctx.lineTo(sf.anchorX, fh)
+          ctx.moveTo(sf.refPointX, 0)
+          ctx.lineTo(sf.refPointX, fh)
           ctx.stroke()
           ctx.beginPath()
-          ctx.moveTo(0, sf.anchorY)
-          ctx.lineTo(fw, sf.anchorY)
+          ctx.moveTo(0, sf.refPointY)
+          ctx.lineTo(fw, sf.refPointY)
           ctx.stroke()
           ctx.setLineDash([])
 
-          drawAnchorCrosshair(ctx, sf.anchorX, sf.anchorY, scale,
-            sf.isReference ? '#ff6b6b' : '#20bf6b', 14)
+          drawRefPointCrosshair(ctx, sf.refPointX, sf.refPointY, scale, '#20bf6b', 14)
         }
 
         ctx.font = `${Math.max(12, 14 / scale)}px sans-serif`
@@ -347,30 +459,43 @@ function Canvas({
         }
         ctx.setLineDash([])
 
-        // Common anchor markers
-        for (let r = 0; r < rows; r++) {
-          for (let c = 0; c < cols; c++) {
-            drawAnchorCrosshair(ctx, c * cellWidth + targetX, r * cellHeight + targetY, scale, 'rgba(255, 107, 107, 0.5)', 8)
+        // Snap point markers in each cell
+        if (snapPoint) {
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              drawSnapPointMarker(ctx, c * cellWidth + targetX, r * cellHeight + targetY, scale, 0.6)
+            }
           }
         }
       }
     }
 
     ctx.restore()
-  }, [canvasSize, imageInfo, image, fitParams, viewMode, frames, selectedFrameId, referenceFrameId, gridConfig, processedBgCanvas, alignmentData, imgRef])
+  }, [canvasSize, imageInfo, image, imageElement, fitParams, viewMode, frames, selectedFrameId, snapPoint, gridConfig, processedBgCanvas, alignmentData])
 
   // --- Mouse Handlers ---
   const handleMouseDown = useCallback((e) => {
     if (e.button === 2) {
       e.preventDefault()
-      if (viewMode === 'sheet' && activeTool === 'anchor') {
-        const pos = canvasToImage(e.clientX, e.clientY)
-        if (pos) {
-          const frame = frameAtCoord(pos.ix, pos.iy)
-          if (frame) onRemoveAnchor(frame.id)
+      // Right-click: remove snap point or ref point depending on active tool
+      if (activeTool === 'snapPoint') {
+        if (viewMode === 'frame' && selectedFrameId) {
+          // Right-click in frame view: clear per-frame override (re-link to global)
+          onClearFrameSnapPoint(selectedFrameId)
+        } else {
+          // Right-click in sheet view: clear global snap point
+          onClearSnapPoint()
         }
-      } else if (viewMode === 'frame' && activeTool === 'anchor' && selectedFrameId) {
-        onRemoveAnchor(selectedFrameId)
+      } else if (activeTool === 'refPoint') {
+        if (viewMode === 'sheet') {
+          const pos = canvasToImage(e.clientX, e.clientY)
+          if (pos) {
+            const frame = frameAtCoord(pos.ix, pos.iy)
+            if (frame) onRemoveRefPoint(frame.id)
+          }
+        } else if (viewMode === 'frame' && selectedFrameId) {
+          onRemoveRefPoint(selectedFrameId)
+        }
       }
       return
     }
@@ -388,24 +513,37 @@ function Canvas({
       if (activeTool === 'select') {
         const frame = frameAtCoord(pos.ix, pos.iy)
         if (frame) onSelectFrame(frame.id)
-      } else if (activeTool === 'anchor') {
+      } else if (activeTool === 'snapPoint' && gridConfig) {
+        // Compute cell-local coords
+        const localX = pos.ix % gridConfig.cellWidth
+        const localY = pos.iy % gridConfig.cellHeight
+        onSetSnapPoint(localX, localY)
+      } else if (activeTool === 'refPoint') {
         const frame = frameAtCoord(pos.ix, pos.iy)
         if (frame) {
           onSelectFrame(frame.id)
           setViewMode('frame')
         }
       }
-    } else if (viewMode === 'frame' && activeTool === 'anchor') {
+    } else if (viewMode === 'frame') {
       const sf = frames.find(f => f.id === selectedFrameId)
       if (!sf) return
       const pos = canvasToImage(e.clientX, e.clientY)
       if (!pos) return
-      const ax = Math.max(0, Math.min(sf.srcW, pos.ix))
-      const ay = Math.max(0, Math.min(sf.srcH, pos.iy))
-      onSetAnchor(sf.id, ax, ay)
+      const rx = Math.max(0, Math.min(sf.srcW - 1, pos.ix))
+      const ry = Math.max(0, Math.min(sf.srcH - 1, pos.iy))
+
+      if (activeTool === 'refPoint') {
+        onSetRefPoint(sf.id, rx, ry)
+      } else if (activeTool === 'snapPoint') {
+        // Frame view + snap point tool: set per-frame override (de-link from global)
+        onSetFrameSnapPoint(sf.id, rx, ry)
+      }
     }
-  }, [activeTool, viewMode, canvasToImage, frameAtCoord, frames, selectedFrameId,
-      onSelectFrame, onSetAnchor, onRemoveAnchor, onColorSampled, sampleColorAt, setViewMode])
+  }, [activeTool, viewMode, canvasToImage, frameAtCoord, frames, selectedFrameId, gridConfig,
+      onSelectFrame, onSetSnapPoint, onClearSnapPoint, onSetRefPoint, onRemoveRefPoint,
+      onSetFrameSnapPoint, onClearFrameSnapPoint,
+      onColorSampled, sampleColorAt, setViewMode])
 
   const handleContextMenu = useCallback((e) => {
     e.preventDefault()
@@ -445,9 +583,10 @@ function Canvas({
     setTooltip(null)
   }, [])
 
-  const cursorStyle = activeTool === 'eyedropper' ? 'crosshair'
-    : activeTool === 'anchor' ? 'crosshair'
-    : 'default'
+  const cursorStyle = ['eyedropper', 'snapPoint', 'refPoint'].includes(activeTool) ? 'crosshair' : 'default'
+
+  const frameIndex = viewMode === 'frame' ? frames.findIndex(f => f.id === selectedFrameId) : -1
+  const currentFrameObj = frameIndex >= 0 ? frames[frameIndex] : null
 
   return (
     <div className="canvas-container" ref={containerRef}>
@@ -470,6 +609,15 @@ function Canvas({
             <div className="coordinate-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
               {tooltipColor && <span className="tooltip-color-swatch" style={{ background: tooltipColor }} />}
               {tooltip.text}
+            </div>
+          )}
+          {viewMode === 'frame' && currentFrameObj && frames.length > 1 && (
+            <div className="frame-nav-bar">
+              <button className="frame-nav-btn" onClick={onPrevFrame}>&#8592; Prev</button>
+              <span className="frame-nav-label">
+                {currentFrameObj.label} ({frameIndex + 1} / {frames.length})
+              </span>
+              <button className="frame-nav-btn" onClick={onNextFrame}>Next &#8594;</button>
             </div>
           )}
         </>

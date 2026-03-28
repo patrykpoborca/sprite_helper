@@ -1,49 +1,37 @@
 /**
- * Compute per-frame alignment offsets so all anchors align to a single target point.
+ * Compute per-frame alignment offsets so all reference points align to the snap point.
+ * Supports per-frame snap point overrides (frame.snapPointX/snapPointY).
  *
- * @param {object[]} frames - Array of frame objects with anchorX/anchorY
- * @param {string|null} referenceFrameId - ID of the reference frame, or null to use average
+ * @param {object[]} frames - Array of frame objects with refPointX/refPointY and optional snapPointX/snapPointY
+ * @param {{ x: number, y: number } | null} snapPoint - Shared snap point in cell-local coords
  * @returns {{ offsets: Map<string, {dx: number, dy: number}>, targetX: number, targetY: number }}
  */
-export function computeAlignmentOffsets(frames, referenceFrameId) {
-  if (!Array.isArray(frames) || frames.length === 0) {
-    return { offsets: new Map(), targetX: 0, targetY: 0 }
-  }
-  const anchored = frames.filter(f => f.anchorX !== null && f.anchorY !== null)
-  if (anchored.length === 0) {
-    return { offsets: new Map(), targetX: 0, targetY: 0 }
-  }
+export function computeAlignmentOffsets(frames, snapPoint) {
+  const hasGlobalSnap = snapPoint !== null
+  const hasAnyPerFrameSnap = Array.isArray(frames) && frames.some(f => f.snapPointX != null)
 
-  let targetX, targetY
-
-  if (referenceFrameId) {
-    const ref = anchored.find(f => f.id === referenceFrameId)
-    if (ref) {
-      targetX = ref.anchorX
-      targetY = ref.anchorY
-    } else {
-      // Reference frame has no anchor, fall back to average
-      targetX = anchored.reduce((s, f) => s + f.anchorX, 0) / anchored.length
-      targetY = anchored.reduce((s, f) => s + f.anchorY, 0) / anchored.length
-    }
-  } else {
-    targetX = anchored.reduce((s, f) => s + f.anchorX, 0) / anchored.length
-    targetY = anchored.reduce((s, f) => s + f.anchorY, 0) / anchored.length
+  if ((!hasGlobalSnap && !hasAnyPerFrameSnap) || !Array.isArray(frames) || frames.length === 0) {
+    return { offsets: new Map(), targetX: 0, targetY: 0 }
   }
 
   const offsets = new Map()
   for (const frame of frames) {
-    if (frame.anchorX !== null && frame.anchorY !== null) {
+    // Resolve effective snap point: per-frame override takes priority
+    const effectiveSnapX = frame.snapPointX != null ? frame.snapPointX : (snapPoint ? snapPoint.x : null)
+    const effectiveSnapY = frame.snapPointY != null ? frame.snapPointY : (snapPoint ? snapPoint.y : null)
+
+    if (effectiveSnapX != null && effectiveSnapY != null && frame.refPointX != null && frame.refPointY != null) {
       offsets.set(frame.id, {
-        dx: targetX - frame.anchorX,
-        dy: targetY - frame.anchorY,
+        dx: effectiveSnapX - frame.refPointX,
+        dy: effectiveSnapY - frame.refPointY,
       })
     } else {
       offsets.set(frame.id, { dx: 0, dy: 0 })
     }
   }
 
-  return { offsets, targetX, targetY }
+  // targetX/targetY remains the global snap point for aligned-view markers
+  return { offsets, targetX: snapPoint ? snapPoint.x : 0, targetY: snapPoint ? snapPoint.y : 0 }
 }
 
 /**
